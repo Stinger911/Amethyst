@@ -13,5 +13,6 @@ func NewServer(db *index.DB) http.Handler {
 	mux.HandleFunc("GET /api/search", SearchHandler(db))
 	mux.HandleFunc("GET /api/notes", NotesListHandler(db))
 	mux.HandleFunc("GET /api/notes/{path...}", NoteHandler(db))
+	mux.HandleFunc("GET /api/graph", GraphHandler(db))
 	return mux
 }
