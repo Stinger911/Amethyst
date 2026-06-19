@@ -24,4 +24,4 @@ Not ready yet. Once an MVP is available, this section will have a `docker-compos
 
 ## License
 
-TBD.
+[Business Source License 1.1](./LICENSE-BSL.txt). Personal, educational, and internal non-commercial self-hosted use is free and unrestricted. Commercial use (including offering Amethyst, or a derivative, to third parties on a hosted/managed basis) requires a commercial license — contact office@lab18.net. Four years after each version is published, that version automatically converts to Apache License 2.0.
