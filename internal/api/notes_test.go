@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Stinger911/Amethyst/internal/auth"
 	"github.com/Stinger911/Amethyst/internal/index"
 )
 
@@ -39,9 +40,16 @@ func seedNotesIndex(t *testing.T) *index.DB {
 	return db
 }
 
+// doGet performs an authenticated GET: every content route is gated on a
+// session (see RequireAuth), and that gate is not what these tests exercise.
 func doGet(t *testing.T, db *index.DB, path string) *httptest.ResponseRecorder {
 	t.Helper()
+	token, _, err := auth.NewSession(db)
+	if err != nil {
+		t.Fatalf("auth.NewSession: %v", err)
+	}
 	req := httptest.NewRequest(http.MethodGet, path, nil)
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: token})
 	rec := httptest.NewRecorder()
 	NewServer(db).ServeHTTP(rec, req)
 	return rec

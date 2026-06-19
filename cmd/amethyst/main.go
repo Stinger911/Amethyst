@@ -16,14 +16,17 @@ import (
 	"time"
 
 	"github.com/Stinger911/Amethyst/internal/api"
+	"github.com/Stinger911/Amethyst/internal/auth"
 	"github.com/Stinger911/Amethyst/internal/index"
 	"github.com/Stinger911/Amethyst/internal/watch"
 )
 
 type config struct {
-	VaultPath  string
-	IndexPath  string
-	ListenAddr string
+	VaultPath          string
+	IndexPath          string
+	ListenAddr         string
+	AdminPassword      string
+	AdminPasswordReset bool
 }
 
 func loadConfig() config {
@@ -32,9 +35,11 @@ func loadConfig() config {
 		log.Fatal("VAULT_PATH is required (path to the Obsidian vault to open)")
 	}
 	return config{
-		VaultPath:  vaultPath,
-		IndexPath:  getenvDefault("INDEX_PATH", "data/index.db"),
-		ListenAddr: getenvDefault("LISTEN_ADDR", ":8080"),
+		VaultPath:          vaultPath,
+		IndexPath:          getenvDefault("INDEX_PATH", "data/index.db"),
+		ListenAddr:         getenvDefault("LISTEN_ADDR", ":8080"),
+		AdminPassword:      os.Getenv("ADMIN_PASSWORD"),
+		AdminPasswordReset: os.Getenv("ADMIN_PASSWORD_RESET") == "true",
 	}
 }
 
@@ -59,6 +64,13 @@ func main() {
 		log.Fatalf("open index: %v", err)
 	}
 	defer db.Close()
+
+	// Password fallback is the only working login method until the
+	// Telegram Login Widget exists, so an admin credential is mandatory
+	// from the very first run (plan_amethyst-mvp Фаза 2).
+	if err := auth.EnsureCredential(db, cfg.AdminPassword, cfg.AdminPasswordReset); err != nil {
+		log.Fatalf("admin credential: %v", err)
+	}
 
 	log.Printf("cold scan: %s", cfg.VaultPath)
 	stats, err := index.ColdScan(db, cfg.VaultPath)

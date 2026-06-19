@@ -59,6 +59,24 @@ CREATE TABLE meta (
 );
 `
 
+// authSchemaDDL holds the credential/session tables. These live outside
+// schemaDDL/SchemaVersion on purpose: unlike the note index, they aren't
+// derived from the vault and have no other source of truth, so an
+// unrelated content-schema bump must never silently drop the admin's
+// password or log everyone out. Open creates them once, idempotently, and
+// rebuildSchema never touches them.
+const authSchemaDDL = `
+CREATE TABLE IF NOT EXISTS auth (
+	id            INTEGER PRIMARY KEY CHECK (id = 1),
+	password_hash TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+	token_hash TEXT PRIMARY KEY,
+	expires_at INTEGER NOT NULL
+);
+`
+
 // DB wraps a SQLite connection holding the index for a single vault.
 type DB struct {
 	*sql.DB
@@ -82,6 +100,10 @@ func Open(path string) (*DB, error) {
 	if err := db.ensureSchema(); err != nil {
 		db.Close()
 		return nil, err
+	}
+	if _, err := db.Exec(authSchemaDDL); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("create auth schema: %w", err)
 	}
 	return db, nil
 }

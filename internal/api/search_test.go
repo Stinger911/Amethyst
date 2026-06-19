@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/Stinger911/Amethyst/internal/auth"
 	"github.com/Stinger911/Amethyst/internal/index"
 )
 
@@ -41,7 +42,12 @@ func seedIndex(t *testing.T) *index.DB {
 
 func doSearch(t *testing.T, db *index.DB, query string) SearchResponse {
 	t.Helper()
+	token, _, err := auth.NewSession(db)
+	if err != nil {
+		t.Fatalf("auth.NewSession: %v", err)
+	}
 	req := httptest.NewRequest(http.MethodGet, "/api/search?"+query, nil)
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: token})
 	rec := httptest.NewRecorder()
 	NewServer(db).ServeHTTP(rec, req)
 
