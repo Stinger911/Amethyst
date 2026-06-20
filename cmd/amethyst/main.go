@@ -27,6 +27,8 @@ type config struct {
 	ListenAddr         string
 	AdminPassword      string
 	AdminPasswordReset bool
+	TelegramBotToken   string
+	TelegramOwnerID    string
 }
 
 func loadConfig() config {
@@ -40,6 +42,8 @@ func loadConfig() config {
 		ListenAddr:         getenvDefault("LISTEN_ADDR", ":8080"),
 		AdminPassword:      os.Getenv("ADMIN_PASSWORD"),
 		AdminPasswordReset: os.Getenv("ADMIN_PASSWORD_RESET") == "true",
+		TelegramBotToken:   os.Getenv("TELEGRAM_BOT_TOKEN"),
+		TelegramOwnerID:    os.Getenv("TELEGRAM_OWNER_CHAT_ID"),
 	}
 }
 
@@ -103,8 +107,11 @@ func main() {
 	}()
 
 	server := &http.Server{
-		Addr:    cfg.ListenAddr,
-		Handler: api.NewServer(db),
+		Addr: cfg.ListenAddr,
+		Handler: api.NewServer(db, api.TelegramConfig{
+			BotToken:    cfg.TelegramBotToken,
+			OwnerChatID: cfg.TelegramOwnerID,
+		}),
 	}
 
 	go func() {

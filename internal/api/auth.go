@@ -72,6 +72,42 @@ func LogoutHandler(db *index.DB) http.HandlerFunc {
 	}
 }
 
+// TelegramCallbackHandler serves GET /api/auth/telegram/callback: Telegram
+// redirects the browser here after the user approves the Login Widget,
+// with the user's data signed in the query string. There's no pairing
+// flow yet to discover the owner dynamically (that needs the bot itself,
+// plan_amethyst-telegram-bot Фаза 4) — instead the one allowed Telegram
+// user id is env-configured (TELEGRAM_OWNER_CHAT_ID), the same way
+// ADMIN_PASSWORD seeds the password fallback.
+func TelegramCallbackHandler(db *index.DB, botToken, ownerChatID string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if botToken == "" || ownerChatID == "" {
+			http.Error(w, "telegram login is not configured", http.StatusServiceUnavailable)
+			return
+		}
+
+		query := r.URL.Query()
+		if err := auth.VerifyTelegramWidgetData(botToken, query); err != nil {
+			http.Redirect(w, r, "/login?error=telegram", http.StatusFound)
+			return
+		}
+		if query.Get("id") != ownerChatID {
+			http.Redirect(w, r, "/login?error=telegram", http.StatusFound)
+			return
+		}
+
+		token, expiresAt, err := auth.NewSession(db)
+		if err != nil {
+			log.Printf("create session (telegram): %v", err)
+			http.Error(w, "login failed", http.StatusInternalServerError)
+			return
+		}
+
+		setSessionCookie(w, r, token, expiresAt)
+		http.Redirect(w, r, "/", http.StatusFound)
+	}
+}
+
 func setSessionCookie(w http.ResponseWriter, r *http.Request, token string, expiresAt time.Time) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     auth.SessionCookieName,

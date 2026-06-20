@@ -35,7 +35,7 @@ func postJSON(t *testing.T, db *index.DB, path string, body any, cookies ...*htt
 		req.AddCookie(c)
 	}
 	rec := httptest.NewRecorder()
-	NewServer(db).ServeHTTP(rec, req)
+	NewServer(db, TelegramConfig{}).ServeHTTP(rec, req)
 	return rec
 }
 
