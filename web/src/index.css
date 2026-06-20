@@ -1,0 +1,73 @@
+:root {
+  font-family: system-ui, sans-serif;
+  color-scheme: light dark;
+}
+
+body {
+  margin: 0;
+}
+
+a {
+  color: inherit;
+}
+
+.app-shell {
+  display: flex;
+  min-height: 100vh;
+}
+
+.app-nav {
+  width: 220px;
+  flex-shrink: 0;
+  border-right: 1px solid #ccc;
+  padding: 1rem;
+}
+
+.app-nav a {
+  display: block;
+  padding: 0.25rem 0;
+  text-decoration: none;
+}
+
+.app-main {
+  flex: 1;
+  padding: 1rem 2rem;
+  min-width: 0;
+}
+
+.notes-list {
+  list-style: none;
+  padding: 0;
+}
+
+.notes-list li {
+  margin-bottom: 0.25rem;
+}
+
+.note-tags {
+  display: inline-flex;
+  gap: 0.4rem;
+  margin-left: 0.5rem;
+}
+
+.note-tag {
+  font-size: 0.8em;
+  background: #eee;
+  border-radius: 4px;
+  padding: 0 0.4em;
+}
+
+.note-content {
+  line-height: 1.6;
+}
+
+.note-content .wikilink-missing {
+  color: #b00;
+  text-decoration: underline dotted;
+}
+
+.backlinks {
+  margin-top: 2rem;
+  border-top: 1px solid #ccc;
+  padding-top: 1rem;
+}
