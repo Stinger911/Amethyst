@@ -18,6 +18,23 @@ type loginRequest struct {
 	Password string `json:"password"`
 }
 
+type authConfigResponse struct {
+	TelegramBotUsername string `json:"telegramBotUsername"`
+}
+
+// AuthConfigHandler serves GET /api/auth/config: tells the (unauthenticated)
+// login page whether to render the Telegram Login Widget, and under which
+// bot username. Empty string means Telegram login isn't configured.
+func AuthConfigHandler(telegram TelegramConfig) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		username := ""
+		if telegram.BotToken != "" && telegram.OwnerChatID != "" {
+			username = telegram.BotUsername
+		}
+		writeJSON(w, http.StatusOK, authConfigResponse{TelegramBotUsername: username})
+	}
+}
+
 // LoginHandler serves POST /api/auth/login: verifies the password against
 // the stored admin hash and, on success, sets a session cookie.
 func LoginHandler(db *index.DB) http.HandlerFunc {

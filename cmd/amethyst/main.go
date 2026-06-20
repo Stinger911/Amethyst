@@ -29,6 +29,7 @@ type config struct {
 	AdminPasswordReset bool
 	TelegramBotToken   string
 	TelegramOwnerID    string
+	TelegramBotName    string
 }
 
 func loadConfig() config {
@@ -44,6 +45,7 @@ func loadConfig() config {
 		AdminPasswordReset: os.Getenv("ADMIN_PASSWORD_RESET") == "true",
 		TelegramBotToken:   os.Getenv("TELEGRAM_BOT_TOKEN"),
 		TelegramOwnerID:    os.Getenv("TELEGRAM_OWNER_CHAT_ID"),
+		TelegramBotName:    os.Getenv("TELEGRAM_BOT_USERNAME"),
 	}
 }
 
@@ -111,6 +113,7 @@ func main() {
 		Handler: api.NewServer(db, api.TelegramConfig{
 			BotToken:    cfg.TelegramBotToken,
 			OwnerChatID: cfg.TelegramOwnerID,
+			BotUsername: cfg.TelegramBotName,
 		}),
 	}
 
