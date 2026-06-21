@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { listNotes, type NoteSummary } from '../api'
+import { buildNotesTree, type TreeNode } from '../notesTree'
 
 export default function NotesListPage() {
   const [notes, setNotes] = useState<NoteSummary[] | null>(null)
@@ -12,25 +13,66 @@ export default function NotesListPage() {
       .catch((err) => setError(String(err)))
   }, [])
 
-  if (error) return <p role="alert">Failed to load notes: {error}</p>
-  if (!notes) return <p>Loading…</p>
+  const tree = useMemo(() => (notes ? buildNotesTree(notes) : null), [notes])
 
-  return (
-    <ul className="notes-list">
-      {notes.map((note) => (
-        <li key={note.path}>
-          <Link to={`/note/${note.path}`}>{note.title}</Link>
-          {note.tags.length > 0 && (
-            <span className="note-tags">
-              {note.tags.map((tag) => (
-                <span className="note-tag" key={tag}>
-                  {tag}
+  if (error) return <p role="alert">Failed to load notes: {error}</p>
+  if (!tree) return <p>Loading…</p>
+
+  return <NotesTree nodes={tree} />
+}
+
+function NotesTree({ nodes }: { nodes: TreeNode[] }) {
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+
+  function toggle(path: string) {
+    setCollapsed((prev) => {
+      const next = new Set(prev)
+      if (next.has(path)) {
+        next.delete(path)
+      } else {
+        next.add(path)
+      }
+      return next
+    })
+  }
+
+  function renderNodes(nodes: TreeNode[]) {
+    return (
+      <ul className="notes-tree">
+        {nodes.map((node) =>
+          node.type === 'folder' ? (
+            <li key={node.path}>
+              <button
+                type="button"
+                className="tree-folder"
+                onClick={() => toggle(node.path)}
+                aria-expanded={!collapsed.has(node.path)}
+              >
+                <span className="tree-folder-arrow">
+                  {collapsed.has(node.path) ? '▸' : '▾'}
                 </span>
-              ))}
-            </span>
-          )}
-        </li>
-      ))}
-    </ul>
-  )
+                {node.name}
+              </button>
+              {!collapsed.has(node.path) && renderNodes(node.children)}
+            </li>
+          ) : (
+            <li key={node.path}>
+              <Link to={`/note/${node.path}`}>{node.title}</Link>
+              {node.tags.length > 0 && (
+                <span className="note-tags">
+                  {node.tags.map((tag) => (
+                    <span className="note-tag" key={tag}>
+                      {tag}
+                    </span>
+                  ))}
+                </span>
+              )}
+            </li>
+          ),
+        )}
+      </ul>
+    )
+  }
+
+  return renderNodes(nodes)
 }

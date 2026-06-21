@@ -43,13 +43,34 @@ a {
   min-width: 0;
 }
 
-.notes-list {
+.notes-tree {
   list-style: none;
   padding: 0;
 }
 
-.notes-list li {
+.notes-tree .notes-tree {
+  padding-left: 1.25rem;
+}
+
+.notes-tree li {
   margin-bottom: 0.25rem;
+}
+
+.tree-folder {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tree-folder-arrow {
+  display: inline-block;
+  width: 1em;
 }
 
 .note-tags {
