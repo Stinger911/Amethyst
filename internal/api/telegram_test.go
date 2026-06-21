@@ -47,7 +47,7 @@ func TestTelegramCallback_NotConfiguredIsServiceUnavailable(t *testing.T) {
 	db := openMiddlewareTestDB(t)
 	req := telegramCallbackRequest("bot-token", "12345")
 	rec := httptest.NewRecorder()
-	NewServer(db, TelegramConfig{}).ServeHTTP(rec, req)
+	NewServer(db, TelegramConfig{}, nil).ServeHTTP(rec, req)
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want 503", rec.Code)
 	}
@@ -57,7 +57,7 @@ func TestTelegramCallback_ValidOwnerSetsSessionCookie(t *testing.T) {
 	db := openMiddlewareTestDB(t)
 	req := telegramCallbackRequest("bot-token", "12345")
 	rec := httptest.NewRecorder()
-	NewServer(db, TelegramConfig{BotToken: "bot-token", OwnerChatID: "12345"}).ServeHTTP(rec, req)
+	NewServer(db, TelegramConfig{BotToken: "bot-token", OwnerChatID: "12345"}, nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusFound {
 		t.Fatalf("status = %d, body = %s, want 302", rec.Code, rec.Body.String())
@@ -88,7 +88,7 @@ func TestTelegramCallback_WrongOwnerIdIsRejected(t *testing.T) {
 	db := openMiddlewareTestDB(t)
 	req := telegramCallbackRequest("bot-token", "99999")
 	rec := httptest.NewRecorder()
-	NewServer(db, TelegramConfig{BotToken: "bot-token", OwnerChatID: "12345"}).ServeHTTP(rec, req)
+	NewServer(db, TelegramConfig{BotToken: "bot-token", OwnerChatID: "12345"}, nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusFound {
 		t.Fatalf("status = %d, want 302 redirect to /login", rec.Code)
@@ -106,7 +106,7 @@ func TestTelegramCallback_TamperedSignatureIsRejected(t *testing.T) {
 	req.URL.RawQuery = q.Encode()
 
 	rec := httptest.NewRecorder()
-	NewServer(db, TelegramConfig{BotToken: "bot-token", OwnerChatID: "12345"}).ServeHTTP(rec, req)
+	NewServer(db, TelegramConfig{BotToken: "bot-token", OwnerChatID: "12345"}, nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusFound {
 		t.Fatalf("status = %d, want 302 redirect to /login", rec.Code)

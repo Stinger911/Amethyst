@@ -1,0 +1,21 @@
+services:
+  amethyst:
+    build: .
+    image: amethyst:latest
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      VAULT_PATH: /vault
+      INDEX_PATH: /data/index.db
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      ADMIN_PASSWORD_RESET: ${ADMIN_PASSWORD_RESET:-false}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_OWNER_CHAT_ID: ${TELEGRAM_OWNER_CHAT_ID:-}
+      TELEGRAM_BOT_USERNAME: ${TELEGRAM_BOT_USERNAME:-}
+    volumes:
+      - ${VAULT_HOST_PATH}:/vault
+      - amethyst-data:/data
+
+volumes:
+  amethyst-data:

@@ -19,6 +19,7 @@ import (
 	"github.com/Stinger911/Amethyst/internal/auth"
 	"github.com/Stinger911/Amethyst/internal/index"
 	"github.com/Stinger911/Amethyst/internal/watch"
+	"github.com/Stinger911/Amethyst/internal/webui"
 )
 
 type config struct {
@@ -108,13 +109,21 @@ func main() {
 		}
 	}()
 
+	staticHandler, err := webui.Handler()
+	if err != nil {
+		log.Fatalf("embedded frontend: %v", err)
+	}
+	if staticHandler == nil {
+		log.Printf("frontend not built into this binary; serving API only (run `make build-frontend` to include it)")
+	}
+
 	server := &http.Server{
 		Addr: cfg.ListenAddr,
 		Handler: api.NewServer(db, api.TelegramConfig{
 			BotToken:    cfg.TelegramBotToken,
 			OwnerChatID: cfg.TelegramOwnerID,
 			BotUsername: cfg.TelegramBotName,
-		}),
+		}, staticHandler),
 	}
 
 	go func() {

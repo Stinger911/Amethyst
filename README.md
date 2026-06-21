@@ -20,7 +20,29 @@ Most self-hosted note tools with a web + Telegram interface replace your notes w
 
 ## Install
 
-Not ready yet. Once an MVP is available, this section will have a `docker-compose` quick start.
+Not ready yet — there's no released MVP, so treat the steps below as a build-from-source dev/preview setup, not a stable install path.
+
+### Docker (recommended once running this for real)
+
+```sh
+cp .env.example .env   # then edit VAULT_HOST_PATH, ADMIN_PASSWORD, etc.
+docker compose up --build
+```
+
+This builds the frontend, embeds it into the Go binary, and serves both the API and the UI from one container on `:8080`.
+
+### From source
+
+Requires Go 1.26+ and Node 22+.
+
+```sh
+make build   # builds web/ with vite, then the amethyst binary (bin/amethyst)
+VAULT_PATH=/path/to/your/vault ADMIN_PASSWORD=change-me ./bin/amethyst
+```
+
+Other Makefile targets: `make test` (Go + frontend tests), `make lint` (`go vet` + eslint), `make run` (build + run), `make docker-build`.
+
+During day-to-day frontend development, run `cd web && npm run dev` instead — its Vite dev server proxies `/api` to a separately-running `go run ./cmd/amethyst` on `:8080`, so you get hot reload instead of rebuilding the embedded binary on every change.
 
 ## License
 

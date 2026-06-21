@@ -5,6 +5,12 @@ import react from '@vitejs/plugin-react'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
+  build: {
+    // The Go server embeds this directory directly (internal/webui) to
+    // serve the UI from a single binary — see internal/webui/embed.go.
+    outDir: '../internal/webui/dist',
+    emptyOutDir: true,
+  },
   server: {
     proxy: {
       '/api': {

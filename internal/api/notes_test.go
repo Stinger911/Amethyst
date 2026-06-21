@@ -51,7 +51,7 @@ func doGet(t *testing.T, db *index.DB, path string) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(http.MethodGet, path, nil)
 	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: token})
 	rec := httptest.NewRecorder()
-	NewServer(db, TelegramConfig{}).ServeHTTP(rec, req)
+	NewServer(db, TelegramConfig{}, nil).ServeHTTP(rec, req)
 	return rec
 }
 

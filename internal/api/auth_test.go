@@ -35,7 +35,7 @@ func postJSON(t *testing.T, db *index.DB, path string, body any, cookies ...*htt
 		req.AddCookie(c)
 	}
 	rec := httptest.NewRecorder()
-	NewServer(db, TelegramConfig{}).ServeHTTP(rec, req)
+	NewServer(db, TelegramConfig{}, nil).ServeHTTP(rec, req)
 	return rec
 }
 
@@ -111,7 +111,7 @@ func TestAuthConfig_TelegramNotConfigured(t *testing.T) {
 	db := openAuthTestDB(t)
 	req := httptest.NewRequest(http.MethodGet, "/api/auth/config", nil)
 	rec := httptest.NewRecorder()
-	NewServer(db, TelegramConfig{}).ServeHTTP(rec, req)
+	NewServer(db, TelegramConfig{}, nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
@@ -133,7 +133,7 @@ func TestAuthConfig_TelegramConfigured(t *testing.T) {
 		BotToken:    "bot-token",
 		OwnerChatID: "12345",
 		BotUsername: "AmethystBot",
-	}).ServeHTTP(rec, req)
+	}, nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)

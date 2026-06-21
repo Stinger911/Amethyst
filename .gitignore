@@ -8,6 +8,13 @@ node_modules/
 dist/
 build/
 
+# internal/webui/dist is vite's build output, embedded into the Go binary
+# (see internal/webui/embed.go) — keep the placeholder so go:embed has
+# something to embed before the frontend has ever been built.
+!/internal/webui/dist/
+/internal/webui/dist/*
+!/internal/webui/dist/placeholder.txt
+
 # Env / secrets
 .env
 .env.*

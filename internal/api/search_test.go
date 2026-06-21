@@ -49,7 +49,7 @@ func doSearch(t *testing.T, db *index.DB, query string) SearchResponse {
 	req := httptest.NewRequest(http.MethodGet, "/api/search?"+query, nil)
 	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: token})
 	rec := httptest.NewRecorder()
-	NewServer(db, TelegramConfig{}).ServeHTTP(rec, req)
+	NewServer(db, TelegramConfig{}, nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
