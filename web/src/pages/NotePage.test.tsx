@@ -18,6 +18,8 @@ const hub: NoteDetail = {
   frontmatter: {},
   tags: ['demo'],
   backlinks: [{ path: 'Other.md', title: 'Other' }],
+  raw: 'See [[Leaf]]',
+  hash: 'hub-hash',
 }
 
 const leaf: NoteDetail = {
@@ -27,6 +29,8 @@ const leaf: NoteDetail = {
   frontmatter: {},
   tags: [],
   backlinks: [],
+  raw: 'leaf content',
+  hash: 'leaf-hash',
 }
 
 function renderNotePage(initialPath: string) {

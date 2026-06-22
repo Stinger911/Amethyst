@@ -51,10 +51,44 @@ type Watcher struct {
 
 	fsw *fsnotify.Watcher
 
-	mu      sync.Mutex
-	timers  map[string]*time.Timer
-	wg      sync.WaitGroup
-	indexMu sync.Mutex // serializes index writes; SQLite allows one writer at a time
+	mu         sync.Mutex
+	timers     map[string]*time.Timer
+	wg         sync.WaitGroup
+	indexMu    sync.Mutex           // serializes index writes; SQLite allows one writer at a time
+	suppressed map[string]time.Time // relPath -> expiry, see Suppress
+}
+
+// suppressTTL bounds how long a Suppress call holds, in case the expected
+// fsnotify event never arrives (e.g. a filesystem that doesn't report
+// self-writes) — without it a missed event would permanently block
+// reindexing of later, genuinely external changes to the same path.
+const suppressTTL = 5 * time.Second
+
+// Suppress marks relPath so the next process() call for it is skipped: the
+// caller (the PUT /api/notes save path, see internal/api/notes_write.go)
+// has already written the file and reindexed it itself, so redoing that
+// from the watcher's own fsnotify event would just be redundant work — see
+// research_amethyst-filewatcher-sync §6 step 5 ("self-suppression").
+func (w *Watcher) Suppress(relPath string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.suppressed == nil {
+		w.suppressed = make(map[string]time.Time)
+	}
+	w.suppressed[relPath] = time.Now().Add(suppressTTL)
+}
+
+// consumeSuppressed reports whether relPath was suppressed (and clears the
+// flag either way, so a stale/expired entry doesn't linger).
+func (w *Watcher) consumeSuppressed(relPath string) bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	expiry, ok := w.suppressed[relPath]
+	if !ok {
+		return false
+	}
+	delete(w.suppressed, relPath)
+	return time.Now().Before(expiry)
 }
 
 // New creates a Watcher for the vault at root, backed by db. Call Start
@@ -185,6 +219,10 @@ func (w *Watcher) process(fullPath string) {
 		return
 	}
 	relPath = filepath.ToSlash(relPath)
+
+	if w.consumeSuppressed(relPath) {
+		return
+	}
 
 	w.indexMu.Lock()
 	defer w.indexMu.Unlock()

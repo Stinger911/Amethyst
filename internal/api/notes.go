@@ -4,11 +4,15 @@
 package api
 
 import (
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"log"
 	"net/http"
+	"os"
+	"path"
 
 	"github.com/Stinger911/Amethyst/internal/index"
 	"github.com/Stinger911/Amethyst/internal/render"
@@ -40,6 +44,13 @@ type NoteDetail struct {
 	Frontmatter map[string]any `json:"frontmatter"`
 	Tags        []string       `json:"tags"`
 	Backlinks   []Backlink     `json:"backlinks"`
+	// Raw is the exact on-disk markdown (including frontmatter), and Hash
+	// is its sha256 — the editor (plan_amethyst-web-ui §1 "редактор —
+	// исключение") works on this raw text, and PUT /api/notes/{path...}
+	// echoes Hash back as baseHash for optimistic-concurrency conflict
+	// detection (see notes_write.go).
+	Raw  string `json:"raw"`
+	Hash string `json:"hash"`
 }
 
 // NotesListHandler serves GET /api/notes: every note's path, title and tags.
@@ -56,8 +67,8 @@ func NotesListHandler(db *index.DB) http.HandlerFunc {
 }
 
 // NoteHandler serves GET /api/notes/{path...}: rendered HTML, frontmatter,
-// tags and backlinks for one note.
-func NoteHandler(db *index.DB) http.HandlerFunc {
+// tags, backlinks, and the raw markdown + hash for one note.
+func NoteHandler(db *index.DB, vaultRoot string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		path := r.PathValue("path")
 		if path == "" {
@@ -65,7 +76,7 @@ func NoteHandler(db *index.DB) http.HandlerFunc {
 			return
 		}
 
-		detail, err := loadNote(db, path)
+		detail, err := loadNote(db, vaultRoot, path)
 		if errors.Is(err, sql.ErrNoRows) {
 			http.Error(w, "note not found", http.StatusNotFound)
 			return
@@ -109,7 +120,7 @@ func listNotes(db *index.DB) ([]NoteSummary, error) {
 	return notes, nil
 }
 
-func loadNote(db *index.DB, path string) (*NoteDetail, error) {
+func loadNote(db *index.DB, vaultRoot, path string) (*NoteDetail, error) {
 	var title, body, frontmatterJSON string
 	err := db.QueryRow(
 		`SELECT title, body, frontmatter_json FROM notes WHERE path = ?`, path,
@@ -142,6 +153,11 @@ func loadNote(db *index.DB, path string) (*NoteDetail, error) {
 		return nil, err
 	}
 
+	raw, hash, err := readRawNote(vaultRoot, path)
+	if err != nil {
+		return nil, err
+	}
+
 	return &NoteDetail{
 		Path:        path,
 		Title:       title,
@@ -149,7 +165,20 @@ func loadNote(db *index.DB, path string) (*NoteDetail, error) {
 		Frontmatter: frontmatter,
 		Tags:        tags,
 		Backlinks:   backlinks,
+		Raw:         raw,
+		Hash:        hash,
 	}, nil
+}
+
+// readRawNote reads relPath's exact on-disk content (the vault, not the
+// index, is the source of truth for what the editor sees) and its sha256.
+func readRawNote(vaultRoot, relPath string) (raw, hash string, err error) {
+	content, err := os.ReadFile(path.Join(vaultRoot, relPath))
+	if err != nil {
+		return "", "", err
+	}
+	sum := sha256.Sum256(content)
+	return string(content), hex.EncodeToString(sum[:]), nil
 }
 
 // linkResolverFor builds a render.Resolver from this note's links rows,

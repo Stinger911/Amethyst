@@ -1,5 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { getAuthConfig, getNote, listNotes, login, logout } from './api'
+import {
+  ConflictError,
+  getAuthConfig,
+  getNote,
+  listNotes,
+  login,
+  logout,
+  saveNote,
+} from './api'
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -102,5 +110,48 @@ describe('api', () => {
     await logout()
 
     expect(fetchMock).toHaveBeenCalledWith('/api/auth/logout', { method: 'POST' })
+  })
+
+  it('saveNote PUTs content and baseHash, encoding the path', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ hash: 'new-hash' }))
+
+    const result = await saveNote('Folder/My Note.md', 'updated text', 'old-hash')
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/notes/Folder/My%20Note.md', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: 'updated text', baseHash: 'old-hash' }),
+    })
+    expect(result).toEqual({ hash: 'new-hash' })
+  })
+
+  it('saveNote throws a ConflictError carrying conflictPath on a 409', async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse({ error: 'conflict', conflictPath: 'Note.sync-conflict-x-web.md' }, 409),
+    )
+
+    await expect(saveNote('Note.md', 'mine', 'stale-hash')).rejects.toMatchObject({
+      conflictPath: 'Note.sync-conflict-x-web.md',
+    })
+  })
+
+  it('saveNote rejects ConflictError as an instanceof check', async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse({ error: 'conflict', conflictPath: 'Note.sync-conflict-x-web.md' }, 409),
+    )
+
+    try {
+      await saveNote('Note.md', 'mine', 'stale-hash')
+      expect.unreachable('saveNote should have thrown')
+    } catch (err) {
+      expect(err).toBeInstanceOf(ConflictError)
+    }
+  })
+
+  it('saveNote redirects to /login on a 401', async () => {
+    fetchMock.mockResolvedValue(new Response('', { status: 401 }))
+
+    await expect(saveNote('Note.md', 'mine', 'hash')).rejects.toThrow('authentication required')
+    expect(window.location.href).toBe('/login?next=%2Fnotes%3Fx%3D1')
   })
 })

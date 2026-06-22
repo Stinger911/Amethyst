@@ -13,7 +13,7 @@ import (
 	"github.com/Stinger911/Amethyst/internal/index"
 )
 
-func seedNotesIndex(t *testing.T) *index.DB {
+func seedNotesIndex(t *testing.T) (*index.DB, string) {
 	t.Helper()
 	root := t.TempDir()
 	write := func(rel, content string) {
@@ -37,12 +37,12 @@ func seedNotesIndex(t *testing.T) *index.DB {
 	if _, err := index.ColdScan(db, root); err != nil {
 		t.Fatalf("ColdScan: %v", err)
 	}
-	return db
+	return db, root
 }
 
 // doGet performs an authenticated GET: every content route is gated on a
 // session (see RequireAuth), and that gate is not what these tests exercise.
-func doGet(t *testing.T, db *index.DB, path string) *httptest.ResponseRecorder {
+func doGet(t *testing.T, db *index.DB, vaultRoot, path string) *httptest.ResponseRecorder {
 	t.Helper()
 	token, _, err := auth.NewSession(db)
 	if err != nil {
@@ -51,13 +51,13 @@ func doGet(t *testing.T, db *index.DB, path string) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(http.MethodGet, path, nil)
 	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: token})
 	rec := httptest.NewRecorder()
-	NewServer(db, TelegramConfig{}, nil).ServeHTTP(rec, req)
+	NewServer(db, TelegramConfig{}, WriteConfig{VaultRoot: vaultRoot}, nil).ServeHTTP(rec, req)
 	return rec
 }
 
 func TestNotesList_ReturnsAllNotesWithTags(t *testing.T) {
-	db := seedNotesIndex(t)
-	rec := doGet(t, db, "/api/notes")
+	db, root := seedNotesIndex(t)
+	rec := doGet(t, db, root, "/api/notes")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}
@@ -83,8 +83,8 @@ func TestNotesList_ReturnsAllNotesWithTags(t *testing.T) {
 }
 
 func TestNote_RendersHTMLWithResolvedAndMissingLinks(t *testing.T) {
-	db := seedNotesIndex(t)
-	rec := doGet(t, db, "/api/notes/Hub.md")
+	db, root := seedNotesIndex(t)
+	rec := doGet(t, db, root, "/api/notes/Hub.md")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}
@@ -112,8 +112,8 @@ func TestNote_RendersHTMLWithResolvedAndMissingLinks(t *testing.T) {
 }
 
 func TestNote_BacklinksListsLinkingNotes(t *testing.T) {
-	db := seedNotesIndex(t)
-	rec := doGet(t, db, "/api/notes/Leaf.md")
+	db, root := seedNotesIndex(t)
+	rec := doGet(t, db, root, "/api/notes/Leaf.md")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}
@@ -128,8 +128,8 @@ func TestNote_BacklinksListsLinkingNotes(t *testing.T) {
 }
 
 func TestNote_UnknownPathReturns404(t *testing.T) {
-	db := seedNotesIndex(t)
-	rec := doGet(t, db, "/api/notes/DoesNotExist.md")
+	db, root := seedNotesIndex(t)
+	rec := doGet(t, db, root, "/api/notes/DoesNotExist.md")
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", rec.Code)
 	}

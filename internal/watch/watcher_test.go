@@ -165,6 +165,48 @@ func TestWatcher_NewSubdirectoryWithFilesGetsIndexed(t *testing.T) {
 	}
 }
 
+func TestWatcher_SuppressSkipsOneEventThenResumes(t *testing.T) {
+	root := t.TempDir()
+	full := filepath.Join(root, "note.md")
+	if err := os.WriteFile(full, []byte("v1\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	w, events := newTestWatcher(t, root)
+	// addRecursive schedules every pre-existing file at startup, so drain
+	// that initial reindex before testing suppression of our own write —
+	// otherwise the two could race.
+	awaitEvent(t, events, "note.md")
+
+	w.Suppress("note.md")
+	if err := os.WriteFile(full, []byte("v2 (written by API handler)\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	select {
+	case ev := <-events:
+		t.Fatalf("expected suppressed write to produce no event, got %+v", ev)
+	case <-time.After(200 * time.Millisecond):
+		// expected: nothing arrived
+	}
+
+	// Suppress is consumed by the first process() call, so a subsequent,
+	// genuinely external change must still be picked up normally.
+	if err := os.WriteFile(full, []byte("v3 (external)\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	if ev := awaitEvent(t, events, "note.md"); ev.Err != nil {
+		t.Fatalf("process error: %v", ev.Err)
+	}
+
+	var body string
+	if err := w.DB.QueryRow(`SELECT body FROM notes WHERE path = 'note.md'`).Scan(&body); err != nil {
+		t.Fatalf("query body: %v", err)
+	}
+	if body != "v3 (external)\n" {
+		t.Errorf("body = %q, want %q", body, "v3 (external)\n")
+	}
+}
+
 func TestWatcher_SkipsDotDirectories(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, ".obsidian"), 0o755); err != nil {

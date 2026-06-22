@@ -41,7 +41,7 @@ func seedGraphIndex(t *testing.T) *index.DB {
 
 func TestGraph_IncludesIsolatedNotesAsNodes(t *testing.T) {
 	db := seedGraphIndex(t)
-	rec := doGet(t, db, "/api/graph")
+	rec := doGet(t, db, "", "/api/graph")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}
@@ -67,7 +67,7 @@ func TestGraph_IncludesIsolatedNotesAsNodes(t *testing.T) {
 
 func TestGraph_EdgesOnlyConnectNoteToNoteLinks(t *testing.T) {
 	db := seedGraphIndex(t)
-	rec := doGet(t, db, "/api/graph")
+	rec := doGet(t, db, "", "/api/graph")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}

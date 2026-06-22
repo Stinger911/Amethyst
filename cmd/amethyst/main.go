@@ -123,6 +123,9 @@ func main() {
 			BotToken:    cfg.TelegramBotToken,
 			OwnerChatID: cfg.TelegramOwnerID,
 			BotUsername: cfg.TelegramBotName,
+		}, api.WriteConfig{
+			VaultRoot: cfg.VaultPath,
+			Watcher:   w,
 		}, staticHandler),
 	}
 

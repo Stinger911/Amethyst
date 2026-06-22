@@ -39,6 +39,9 @@ function NoteView({ path }: { path: string }) {
   return (
     <article>
       <h1>{note.title}</h1>
+      <Link to={`/edit/${note.path}`} className="edit-link">
+        Edit
+      </Link>
       <div
         className="note-content"
         onClick={onContentClick}
