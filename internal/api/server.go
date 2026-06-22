@@ -38,6 +38,8 @@ func NewServer(db *index.DB, telegram TelegramConfig, write WriteConfig, static 
 	mux.HandleFunc("GET /api/notes/{path...}", RequireAuth(db, NoteHandler(db, write.VaultRoot)))
 	mux.HandleFunc("PUT /api/notes/{path...}", RequireAuth(db, SaveNoteHandler(db, write)))
 	mux.HandleFunc("GET /api/graph", RequireAuth(db, GraphHandler(db)))
+	mux.HandleFunc("GET /api/settings", RequireAuth(db, GetSettingsHandler(db)))
+	mux.HandleFunc("PUT /api/settings", RequireAuth(db, SaveSettingsHandler(db)))
 	mux.HandleFunc("GET /api/auth/config", AuthConfigHandler(telegram))
 	mux.HandleFunc("POST /api/auth/login", LoginHandler(db))
 	mux.HandleFunc("POST /api/auth/logout", LogoutHandler(db))

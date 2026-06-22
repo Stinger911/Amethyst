@@ -21,8 +21,8 @@ import (
 	"time"
 
 	"github.com/Stinger911/Amethyst/internal/index"
-	"github.com/Stinger911/Amethyst/internal/vault"
 	"github.com/Stinger911/Amethyst/internal/watch"
+	"github.com/Stinger911/Amethyst/internal/writepath"
 )
 
 // WriteConfig holds what the write-path handlers need beyond the index:
@@ -80,7 +80,7 @@ func SaveNoteHandler(db *index.DB, write WriteConfig) http.HandlerFunc {
 		// since I loaded it" (exists=false but the client thought it did).
 		if (exists && currentHash != req.BaseHash) || (!exists && req.BaseHash != "") {
 			cPath := conflictPath(relPath, time.Now())
-			if _, err := writeAndIndex(db, write, cPath, []byte(req.Content)); err != nil {
+			if _, err := writepath.WriteAndIndex(db, write.VaultRoot, write.Watcher, cPath, []byte(req.Content)); err != nil {
 				log.Printf("save note %q: write conflict copy: %v", relPath, err)
 				http.Error(w, "save note failed", http.StatusInternalServerError)
 				return
@@ -89,7 +89,7 @@ func SaveNoteHandler(db *index.DB, write WriteConfig) http.HandlerFunc {
 			return
 		}
 
-		hash, err := writeAndIndex(db, write, relPath, []byte(req.Content))
+		hash, err := writepath.WriteAndIndex(db, write.VaultRoot, write.Watcher, relPath, []byte(req.Content))
 		if err != nil {
 			log.Printf("save note %q: %v", relPath, err)
 			http.Error(w, "save note failed", http.StatusInternalServerError)
@@ -140,25 +140,4 @@ func currentFileHash(vaultRoot, relPath string) (hash string, exists bool, err e
 	}
 	sum := sha256.Sum256(content)
 	return hex.EncodeToString(sum[:]), true, nil
-}
-
-// writeAndIndex atomically writes content to relPath, then reindexes it
-// synchronously so the response's hash and the index agree immediately —
-// the caller doesn't have to wait out the watcher's debounce/stability
-// windows to see its own write reflected. The watcher is told to skip its
-// own pass over this path (Watcher.Suppress) since this call already did
-// the reindex.
-func writeAndIndex(db *index.DB, write WriteConfig, relPath string, content []byte) (hash string, err error) {
-	fullPath := path.Join(write.VaultRoot, relPath)
-	if write.Watcher != nil {
-		write.Watcher.Suppress(relPath)
-	}
-	if err := vault.WriteAtomic(fullPath, content); err != nil {
-		return "", err
-	}
-	if err := index.ReindexFile(db, write.VaultRoot, relPath); err != nil {
-		return "", err
-	}
-	sum := sha256.Sum256(content)
-	return hex.EncodeToString(sum[:]), nil
 }

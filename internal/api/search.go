@@ -5,7 +5,6 @@ package api
 
 import (
 	"encoding/json"
-	"errors"
 	"log"
 	"net/http"
 	"strconv"
@@ -33,6 +32,8 @@ type SearchResponse struct {
 }
 
 // SearchHandler serves GET /api/search?q=...&limit=... against notes_fts.
+// The query-building and SQL live in internal/index (index.Search), shared
+// with the Telegram bot's /search command.
 func SearchHandler(db *index.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		q := strings.TrimSpace(r.URL.Query().Get("q"))
@@ -43,46 +44,29 @@ func SearchHandler(db *index.DB) http.HandlerFunc {
 
 		limit := parseLimit(r.URL.Query().Get("limit"))
 
-		matchQuery, err := toFTSQuery(q)
+		matchQuery, err := index.ToFTSQuery(q)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
-		results, err := runSearch(db, matchQuery, limit)
+		results, err := index.Search(db, matchQuery, limit, "<mark>", "</mark>")
 		if err != nil {
 			log.Printf("search %q: %v", q, err)
 			http.Error(w, "search failed", http.StatusInternalServerError)
 			return
 		}
 
-		writeJSON(w, http.StatusOK, SearchResponse{Query: q, Results: results})
+		writeJSON(w, http.StatusOK, SearchResponse{Query: q, Results: toAPIResults(results)})
 	}
 }
 
-func runSearch(db *index.DB, matchQuery string, limit int) ([]SearchResult, error) {
-	rows, err := db.Query(`
-		SELECT notes.path, notes.title,
-		       snippet(notes_fts, 1, '<mark>', '</mark>', '…', 12)
-		FROM notes_fts
-		JOIN notes ON notes.id = notes_fts.rowid
-		WHERE notes_fts MATCH ?
-		ORDER BY rank
-		LIMIT ?`, matchQuery, limit)
-	if err != nil {
-		return nil, err
+func toAPIResults(results []index.SearchResult) []SearchResult {
+	out := make([]SearchResult, len(results))
+	for i, r := range results {
+		out[i] = SearchResult{Path: r.Path, Title: r.Title, Snippet: r.Snippet}
 	}
-	defer rows.Close()
-
-	results := []SearchResult{}
-	for rows.Next() {
-		var res SearchResult
-		if err := rows.Scan(&res.Path, &res.Title, &res.Snippet); err != nil {
-			return nil, err
-		}
-		results = append(results, res)
-	}
-	return results, rows.Err()
+	return out
 }
 
 func parseLimit(raw string) int {
@@ -97,24 +81,6 @@ func parseLimit(raw string) int {
 		return maxSearchLimit
 	}
 	return n
-}
-
-// toFTSQuery turns free-text user input into an FTS5 MATCH expression
-// that can't blow up on the query-language metacharacters FTS5 gives
-// special meaning (AND/OR/NOT, column filters, NEAR, unbalanced quotes,
-// hyphens, colons, ...). Each whitespace-separated term is quoted as a
-// literal phrase and implicitly AND-ed together — plain multi-word
-// search, not the full FTS5 query language.
-func toFTSQuery(q string) (string, error) {
-	fields := strings.Fields(q)
-	if len(fields) == 0 {
-		return "", errors.New("empty query")
-	}
-	quoted := make([]string, len(fields))
-	for i, f := range fields {
-		quoted[i] = `"` + strings.ReplaceAll(f, `"`, `""`) + `"`
-	}
-	return strings.Join(quoted, " "), nil
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

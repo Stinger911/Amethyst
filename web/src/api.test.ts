@@ -3,10 +3,12 @@ import {
   ConflictError,
   getAuthConfig,
   getNote,
+  getSettings,
   listNotes,
   login,
   logout,
   saveNote,
+  saveSettings,
 } from './api'
 
 function jsonResponse(body: unknown, status = 200) {
@@ -152,6 +154,37 @@ describe('api', () => {
     fetchMock.mockResolvedValue(new Response('', { status: 401 }))
 
     await expect(saveNote('Note.md', 'mine', 'hash')).rejects.toThrow('authentication required')
+    expect(window.location.href).toBe('/login?next=%2Fnotes%3Fx%3D1')
+  })
+
+  it('getSettings fetches /api/settings', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ captureMode: 'inbox' }))
+
+    const result = await getSettings()
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/settings')
+    expect(result).toEqual({ captureMode: 'inbox' })
+  })
+
+  it('saveSettings PUTs the new capture mode', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ captureMode: 'daily' }))
+
+    const result = await saveSettings({ captureMode: 'daily' })
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ captureMode: 'daily' }),
+    })
+    expect(result).toEqual({ captureMode: 'daily' })
+  })
+
+  it('saveSettings redirects to /login on a 401', async () => {
+    fetchMock.mockResolvedValue(new Response('', { status: 401 }))
+
+    await expect(saveSettings({ captureMode: 'inbox' })).rejects.toThrow(
+      'authentication required',
+    )
     expect(window.location.href).toBe('/login?next=%2Fnotes%3Fx%3D1')
   })
 })

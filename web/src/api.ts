@@ -114,3 +114,30 @@ export async function login(password: string): Promise<void> {
 export async function logout(): Promise<void> {
   await fetch('/api/auth/logout', { method: 'POST' })
 }
+
+// CaptureMode mirrors internal/settings's CaptureModeInbox/CaptureModeDaily.
+export type CaptureMode = 'inbox' | 'daily'
+
+export interface Settings {
+  captureMode: CaptureMode
+}
+
+export function getSettings(): Promise<Settings> {
+  return getJSON('/api/settings')
+}
+
+export async function saveSettings(settings: Settings): Promise<Settings> {
+  const res = await fetch('/api/settings', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(settings),
+  })
+  if (res.status === 401) {
+    redirectToLogin()
+    throw new Error('authentication required')
+  }
+  if (!res.ok) {
+    throw new Error(`save settings: ${res.status} ${await res.text()}`)
+  }
+  return res.json() as Promise<Settings>
+}

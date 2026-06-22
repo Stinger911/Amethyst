@@ -77,6 +77,17 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 `
 
+// settingsSchemaDDL holds user-configurable settings (e.g. the Telegram
+// bot's capture mode, see internal/settings) — like auth, this is genuine
+// persistent state, not a derived cache, so it's created idempotently here
+// rather than living under SchemaVersion/rebuildSchema.
+const settingsSchemaDDL = `
+CREATE TABLE IF NOT EXISTS settings (
+	key   TEXT PRIMARY KEY,
+	value TEXT NOT NULL
+);
+`
+
 // DB wraps a SQLite connection holding the index for a single vault.
 type DB struct {
 	*sql.DB
@@ -104,6 +115,10 @@ func Open(path string) (*DB, error) {
 	if _, err := db.Exec(authSchemaDDL); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("create auth schema: %w", err)
+	}
+	if _, err := db.Exec(settingsSchemaDDL); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("create settings schema: %w", err)
 	}
 	return db, nil
 }

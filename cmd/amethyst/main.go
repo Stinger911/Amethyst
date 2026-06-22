@@ -11,12 +11,16 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"syscall"
 	"time"
 
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+
 	"github.com/Stinger911/Amethyst/internal/api"
 	"github.com/Stinger911/Amethyst/internal/auth"
+	"github.com/Stinger911/Amethyst/internal/bot"
 	"github.com/Stinger911/Amethyst/internal/index"
 	"github.com/Stinger911/Amethyst/internal/watch"
 	"github.com/Stinger911/Amethyst/internal/webui"
@@ -55,6 +59,49 @@ func getenvDefault(key, def string) string {
 		return v
 	}
 	return def
+}
+
+// startTelegramBot wires up internal/bot if TELEGRAM_BOT_TOKEN is set,
+// running its polling loop in its own goroutine tracked by wg. Owner
+// identity is the same env var the Login Widget callback uses
+// (TELEGRAM_OWNER_CHAT_ID) — see internal/bot's package doc for why the
+// dynamic pairing flow isn't wired up yet.
+func startTelegramBot(ctx context.Context, wg *sync.WaitGroup, cfg config, db *index.DB, w *watch.Watcher) {
+	if cfg.TelegramBotToken == "" {
+		return
+	}
+
+	botAPI, err := tgbotapi.NewBotAPI(cfg.TelegramBotToken)
+	if err != nil {
+		log.Fatalf("telegram bot: %v", err)
+	}
+
+	var ownerChatID int64
+	if cfg.TelegramOwnerID != "" {
+		ownerChatID, err = strconv.ParseInt(cfg.TelegramOwnerID, 10, 64)
+		if err != nil {
+			log.Fatalf("TELEGRAM_OWNER_CHAT_ID: %v", err)
+		}
+	}
+	if ownerChatID == 0 {
+		log.Printf("telegram bot: TELEGRAM_OWNER_CHAT_ID not set, bot will ignore all messages until it is")
+	}
+
+	tgBot := &bot.Bot{
+		DB:          db,
+		VaultRoot:   cfg.VaultPath,
+		Watcher:     w,
+		OwnerChatID: ownerChatID,
+		Sender:      bot.NewTelegramSender(botAPI),
+	}
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if err := tgBot.Run(ctx, botAPI); err != nil && !errors.Is(err, context.Canceled) {
+			log.Printf("telegram bot stopped: %v", err)
+		}
+	}()
 }
 
 func main() {
@@ -108,6 +155,8 @@ func main() {
 			log.Printf("watcher stopped: %v", err)
 		}
 	}()
+
+	startTelegramBot(ctx, &wg, cfg, db, w)
 
 	staticHandler, err := webui.Handler()
 	if err != nil {
