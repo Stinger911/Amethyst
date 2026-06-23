@@ -92,6 +92,40 @@ export async function saveNote(
   return res.json() as Promise<SaveNoteResult>
 }
 
+export interface SearchResult {
+  path: string
+  title: string
+  snippet: string
+}
+
+export interface SearchResponse {
+  query: string
+  results: SearchResult[]
+}
+
+export function search(query: string): Promise<SearchResponse> {
+  return getJSON(`/api/search?q=${encodeURIComponent(query)}`)
+}
+
+export interface GraphNode {
+  path: string
+  title: string
+}
+
+export interface GraphEdge {
+  source: string
+  target: string
+}
+
+export interface GraphResponse {
+  nodes: GraphNode[]
+  edges: GraphEdge[]
+}
+
+export function getGraph(): Promise<GraphResponse> {
+  return getJSON('/api/graph')
+}
+
 export interface AuthConfig {
   telegramBotUsername: string
 }
@@ -140,4 +174,25 @@ export async function saveSettings(settings: Settings): Promise<Settings> {
     throw new Error(`save settings: ${res.status} ${await res.text()}`)
   }
   return res.json() as Promise<Settings>
+}
+
+export interface PairResponse {
+  token: string
+  botUsername: string
+  expiresAt: string
+}
+
+// pairTelegram generates a one-time "/start <token>" pairing code (see
+// internal/auth/telegram_pairing.go) for the Settings page's "Link
+// Telegram" button.
+export async function pairTelegram(): Promise<PairResponse> {
+  const res = await fetch('/api/telegram/pair', { method: 'POST' })
+  if (res.status === 401) {
+    redirectToLogin()
+    throw new Error('authentication required')
+  }
+  if (!res.ok) {
+    throw new Error(`pair telegram: ${res.status} ${await res.text()}`)
+  }
+  return res.json() as Promise<PairResponse>
 }

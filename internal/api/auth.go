@@ -24,12 +24,17 @@ type authConfigResponse struct {
 
 // AuthConfigHandler serves GET /api/auth/config: tells the (unauthenticated)
 // login page whether to render the Telegram Login Widget, and under which
-// bot username. Empty string means Telegram login isn't configured.
-func AuthConfigHandler(telegram TelegramConfig) http.HandlerFunc {
+// bot username. Empty string means Telegram login isn't configured. The
+// owner can come from env (TELEGRAM_OWNER_CHAT_ID) or from the dynamic
+// pairing flow (see internal/auth's telegram_pairing.go) — env wins if set.
+func AuthConfigHandler(db *index.DB, telegram TelegramConfig) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		username := ""
-		if telegram.BotToken != "" && telegram.OwnerChatID != "" {
-			username = telegram.BotUsername
+		if telegram.BotToken != "" {
+			owner, err := resolveOwnerChatID(db, telegram.OwnerChatID)
+			if err == nil && owner != "" {
+				username = telegram.BotUsername
+			}
 		}
 		writeJSON(w, http.StatusOK, authConfigResponse{TelegramBotUsername: username})
 	}
@@ -91,14 +96,24 @@ func LogoutHandler(db *index.DB) http.HandlerFunc {
 
 // TelegramCallbackHandler serves GET /api/auth/telegram/callback: Telegram
 // redirects the browser here after the user approves the Login Widget,
-// with the user's data signed in the query string. There's no pairing
-// flow yet to discover the owner dynamically (that needs the bot itself,
-// plan_amethyst-telegram-bot Фаза 4) — instead the one allowed Telegram
-// user id is env-configured (TELEGRAM_OWNER_CHAT_ID), the same way
-// ADMIN_PASSWORD seeds the password fallback.
-func TelegramCallbackHandler(db *index.DB, botToken, ownerChatID string) http.HandlerFunc {
+// with the user's data signed in the query string. The allowed Telegram
+// user id is env-configured (TELEGRAM_OWNER_CHAT_ID, the same way
+// ADMIN_PASSWORD seeds the password fallback) if set, otherwise whichever
+// chat last completed the dynamic pairing flow (internal/auth's
+// telegram_pairing.go).
+func TelegramCallbackHandler(db *index.DB, botToken, envOwnerChatID string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if botToken == "" || ownerChatID == "" {
+		if botToken == "" {
+			http.Error(w, "telegram login is not configured", http.StatusServiceUnavailable)
+			return
+		}
+		ownerChatID, err := resolveOwnerChatID(db, envOwnerChatID)
+		if err != nil {
+			log.Printf("resolve telegram owner: %v", err)
+			http.Error(w, "login failed", http.StatusInternalServerError)
+			return
+		}
+		if ownerChatID == "" {
 			http.Error(w, "telegram login is not configured", http.StatusServiceUnavailable)
 			return
 		}
@@ -123,6 +138,15 @@ func TelegramCallbackHandler(db *index.DB, botToken, ownerChatID string) http.Ha
 		setSessionCookie(w, r, token, expiresAt)
 		http.Redirect(w, r, "/", http.StatusFound)
 	}
+}
+
+// resolveOwnerChatID returns envOwnerChatID if set, otherwise whichever
+// chat ID dynamic pairing has persisted (empty if neither).
+func resolveOwnerChatID(db *index.DB, envOwnerChatID string) (string, error) {
+	if envOwnerChatID != "" {
+		return envOwnerChatID, nil
+	}
+	return auth.GetTelegramOwnerChatID(db)
 }
 
 func setSessionCookie(w http.ResponseWriter, r *http.Request, token string, expiresAt time.Time) {

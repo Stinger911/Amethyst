@@ -2,13 +2,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   ConflictError,
   getAuthConfig,
+  getGraph,
   getNote,
   getSettings,
   listNotes,
   login,
   logout,
+  pairTelegram,
   saveNote,
   saveSettings,
+  search,
 } from './api'
 
 function jsonResponse(body: unknown, status = 200) {
@@ -185,6 +188,41 @@ describe('api', () => {
     await expect(saveSettings({ captureMode: 'inbox' })).rejects.toThrow(
       'authentication required',
     )
+    expect(window.location.href).toBe('/login?next=%2Fnotes%3Fx%3D1')
+  })
+
+  it('search encodes the query and fetches /api/search', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ query: 'a b', results: [] }))
+
+    await search('a b')
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/search?q=a%20b')
+  })
+
+  it('getGraph fetches /api/graph', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ nodes: [], edges: [] }))
+
+    const result = await getGraph()
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/graph')
+    expect(result).toEqual({ nodes: [], edges: [] })
+  })
+
+  it('pairTelegram posts to /api/telegram/pair', async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse({ token: 'abc', botUsername: 'AmethystBot', expiresAt: '2026-06-22T13:00:00Z' }),
+    )
+
+    const result = await pairTelegram()
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/telegram/pair', { method: 'POST' })
+    expect(result.token).toBe('abc')
+  })
+
+  it('pairTelegram redirects to /login on a 401', async () => {
+    fetchMock.mockResolvedValue(new Response('', { status: 401 }))
+
+    await expect(pairTelegram()).rejects.toThrow('authentication required')
     expect(window.location.href).toBe('/login?next=%2Fnotes%3Fx%3D1')
   })
 })

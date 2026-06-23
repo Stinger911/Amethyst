@@ -47,7 +47,7 @@ func TestTelegramCallback_NotConfiguredIsServiceUnavailable(t *testing.T) {
 	db := openMiddlewareTestDB(t)
 	req := telegramCallbackRequest("bot-token", "12345")
 	rec := httptest.NewRecorder()
-	NewServer(db, TelegramConfig{}, WriteConfig{}, nil).ServeHTTP(rec, req)
+	NewServer(db, TelegramConfig{}, WriteConfig{}, nil, nil, nil).ServeHTTP(rec, req)
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want 503", rec.Code)
 	}
@@ -57,7 +57,7 @@ func TestTelegramCallback_ValidOwnerSetsSessionCookie(t *testing.T) {
 	db := openMiddlewareTestDB(t)
 	req := telegramCallbackRequest("bot-token", "12345")
 	rec := httptest.NewRecorder()
-	NewServer(db, TelegramConfig{BotToken: "bot-token", OwnerChatID: "12345"}, WriteConfig{}, nil).ServeHTTP(rec, req)
+	NewServer(db, TelegramConfig{BotToken: "bot-token", OwnerChatID: "12345"}, WriteConfig{}, nil, nil, nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusFound {
 		t.Fatalf("status = %d, body = %s, want 302", rec.Code, rec.Body.String())
@@ -88,13 +88,52 @@ func TestTelegramCallback_WrongOwnerIdIsRejected(t *testing.T) {
 	db := openMiddlewareTestDB(t)
 	req := telegramCallbackRequest("bot-token", "99999")
 	rec := httptest.NewRecorder()
-	NewServer(db, TelegramConfig{BotToken: "bot-token", OwnerChatID: "12345"}, WriteConfig{}, nil).ServeHTTP(rec, req)
+	NewServer(db, TelegramConfig{BotToken: "bot-token", OwnerChatID: "12345"}, WriteConfig{}, nil, nil, nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusFound {
 		t.Fatalf("status = %d, want 302 redirect to /login", rec.Code)
 	}
 	if len(rec.Result().Cookies()) != 0 {
 		t.Error("no session cookie should be set for a non-owner id")
+	}
+}
+
+func TestTelegramCallback_DynamicallyPairedOwnerIsAccepted(t *testing.T) {
+	db := openMiddlewareTestDB(t)
+	if err := auth.SetTelegramOwnerChatID(db, "12345"); err != nil {
+		t.Fatalf("SetTelegramOwnerChatID: %v", err)
+	}
+
+	req := telegramCallbackRequest("bot-token", "12345")
+	rec := httptest.NewRecorder()
+	// OwnerChatID intentionally empty here too: env unset, so the handler
+	// must fall back to the dynamically-paired owner set above.
+	NewServer(db, TelegramConfig{BotToken: "bot-token"}, WriteConfig{}, nil, nil, nil).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusFound {
+		t.Fatalf("status = %d, body = %s, want 302", rec.Code, rec.Body.String())
+	}
+	if loc := rec.Header().Get("Location"); loc != "/" {
+		t.Errorf("Location = %q, want %q", loc, "/")
+	}
+}
+
+func TestTelegramCallback_EnvOwnerTakesPrecedenceOverPairing(t *testing.T) {
+	db := openMiddlewareTestDB(t)
+	if err := auth.SetTelegramOwnerChatID(db, "99999"); err != nil {
+		t.Fatalf("SetTelegramOwnerChatID: %v", err)
+	}
+
+	// The widget says it's chat 12345 (env owner), not 99999 (paired owner).
+	req := telegramCallbackRequest("bot-token", "12345")
+	rec := httptest.NewRecorder()
+	NewServer(db, TelegramConfig{BotToken: "bot-token", OwnerChatID: "12345"}, WriteConfig{}, nil, nil, nil).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusFound {
+		t.Fatalf("status = %d, want 302", rec.Code)
+	}
+	if loc := rec.Header().Get("Location"); loc != "/" {
+		t.Errorf("Location = %q, want %q (env owner should win)", loc, "/")
 	}
 }
 
@@ -106,7 +145,7 @@ func TestTelegramCallback_TamperedSignatureIsRejected(t *testing.T) {
 	req.URL.RawQuery = q.Encode()
 
 	rec := httptest.NewRecorder()
-	NewServer(db, TelegramConfig{BotToken: "bot-token", OwnerChatID: "12345"}, WriteConfig{}, nil).ServeHTTP(rec, req)
+	NewServer(db, TelegramConfig{BotToken: "bot-token", OwnerChatID: "12345"}, WriteConfig{}, nil, nil, nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusFound {
 		t.Fatalf("status = %d, want 302 redirect to /login", rec.Code)

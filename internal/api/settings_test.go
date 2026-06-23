@@ -37,7 +37,7 @@ func authedRequest(t *testing.T, db *index.DB, method, path string, body []byte)
 	req := httptest.NewRequest(method, path, reader)
 	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: token})
 	rec := httptest.NewRecorder()
-	NewServer(db, TelegramConfig{}, WriteConfig{}, nil).ServeHTTP(rec, req)
+	NewServer(db, TelegramConfig{}, WriteConfig{}, nil, nil, nil).ServeHTTP(rec, req)
 	return rec
 }
 

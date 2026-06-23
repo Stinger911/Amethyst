@@ -28,7 +28,7 @@ func doPut(t *testing.T, db *index.DB, vaultRoot, path string, body any) *httpte
 	req := httptest.NewRequest(http.MethodPut, path, bytes.NewReader(raw))
 	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: token})
 	rec := httptest.NewRecorder()
-	NewServer(db, TelegramConfig{}, WriteConfig{VaultRoot: vaultRoot}, nil).ServeHTTP(rec, req)
+	NewServer(db, TelegramConfig{}, WriteConfig{VaultRoot: vaultRoot}, nil, nil, nil).ServeHTTP(rec, req)
 	return rec
 }
 

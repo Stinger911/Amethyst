@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { getNote, type NoteDetail } from '../api'
+import { useExternalChangeNotice } from '../useExternalChangeNotice'
 
 export default function NotePage() {
   const params = useParams()
@@ -14,12 +15,22 @@ function NoteView({ path }: { path: string }) {
   const navigate = useNavigate()
   const [note, setNote] = useState<NoteDetail | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [changed, resetChanged] = useExternalChangeNotice(path)
 
-  useEffect(() => {
+  const load = useCallback(() => {
     getNote(path)
       .then(setNote)
       .catch((err) => setError(String(err)))
   }, [path])
+
+  useEffect(() => {
+    load()
+  }, [load])
+
+  function onReload() {
+    resetChanged()
+    load()
+  }
 
   // Rendered wiki-links are plain <a href="/note/..."> from the Go-side
   // renderer (internal/render/wikilink.go) — intercept clicks on those so
@@ -42,6 +53,16 @@ function NoteView({ path }: { path: string }) {
       <Link to={`/edit/${note.path}`} className="edit-link">
         Edit
       </Link>
+
+      {changed && (
+        <div role="alert" className="external-change-banner">
+          <p>This note changed outside the app.</p>
+          <button type="button" onClick={onReload}>
+            Reload
+          </button>
+        </div>
+      )}
+
       <div
         className="note-content"
         onClick={onContentClick}

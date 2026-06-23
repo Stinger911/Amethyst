@@ -1,18 +1,21 @@
 // Package bot implements the Telegram bot from plan_amethyst-telegram-bot:
-// capture (plain text -> Inbox or daily note), /search and /note. The
-// owner's chat ID is env-configured for now (TELEGRAM_OWNER_CHAT_ID, same
-// as the Login Widget in internal/auth/telegram.go) — the dynamic
-// /start <token> pairing flow described in the plan is deferred until
-// there's a Settings-page button to generate a token from.
+// capture (plain text -> Inbox or daily note), /search, /note, and
+// /start <token> pairing. The owner's chat ID is env-configured
+// (TELEGRAM_OWNER_CHAT_ID) if set — same as the Login Widget in
+// internal/auth/telegram.go — otherwise whichever chat last completed the
+// /start <token> pairing flow (internal/auth's telegram_pairing.go), kicked
+// off from the Settings page's "Link Telegram" button.
 package bot
 
 import (
 	"context"
 	"log"
+	"strconv"
 	"strings"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 
+	"github.com/Stinger911/Amethyst/internal/auth"
 	"github.com/Stinger911/Amethyst/internal/index"
 	"github.com/Stinger911/Amethyst/internal/watch"
 )
@@ -33,11 +36,31 @@ type Sender interface {
 
 // Bot holds everything the command/capture handlers need.
 type Bot struct {
-	DB          *index.DB
-	VaultRoot   string
-	Watcher     *watch.Watcher
-	OwnerChatID int64 // 0 means "not configured" — see plan §2.
+	DB        *index.DB
+	VaultRoot string
+	Watcher   *watch.Watcher
+	// OwnerChatID is the env-configured owner (TELEGRAM_OWNER_CHAT_ID). 0
+	// means "not set via env" — currentOwnerChatID then falls back to
+	// whichever chat last completed /start <token> pairing, persisted in DB.
+	OwnerChatID int64
 	Sender      Sender
+}
+
+// currentOwnerChatID resolves the live owner: env wins if set, otherwise
+// the dynamically-paired owner (0 if neither is set yet).
+func (b *Bot) currentOwnerChatID() int64 {
+	if b.OwnerChatID != 0 {
+		return b.OwnerChatID
+	}
+	chatIDStr, err := auth.GetTelegramOwnerChatID(b.DB)
+	if err != nil || chatIDStr == "" {
+		return 0
+	}
+	id, err := strconv.ParseInt(chatIDStr, 10, 64)
+	if err != nil {
+		return 0
+	}
+	return id
 }
 
 // Run polls api for updates and dispatches them until ctx is cancelled.
@@ -68,12 +91,22 @@ func (b *Bot) Run(ctx context.Context, api *tgbotapi.BotAPI) error {
 
 // HandleUpdate applies the auth gate (plan §2: silently ignore anyone but
 // the configured owner) and dispatches commands vs. plain-text capture.
+// /start is checked before the gate: its own security is the pairing
+// token, not the sender's chat ID — that's how an unpaired bot acquires
+// its first owner at all (plan §3).
 func (b *Bot) HandleUpdate(msg IncomingMessage) {
-	if b.OwnerChatID == 0 || msg.ChatID != b.OwnerChatID {
+	text := strings.TrimSpace(msg.Text)
+
+	if matchesCommand(text, "/start") {
+		b.handleStart(msg.ChatID, strings.TrimSpace(stripCommand(text, "/start")))
 		return
 	}
 
-	text := strings.TrimSpace(msg.Text)
+	owner := b.currentOwnerChatID()
+	if owner == 0 || msg.ChatID != owner {
+		return
+	}
+
 	switch {
 	case text == "":
 		return
@@ -81,10 +114,6 @@ func (b *Bot) HandleUpdate(msg IncomingMessage) {
 		b.handleSearch(msg.ChatID, strings.TrimSpace(stripCommand(text, "/search")))
 	case matchesCommand(text, "/note"):
 		b.handleNote(msg.ChatID, strings.TrimSpace(stripCommand(text, "/note")))
-	case matchesCommand(text, "/start"):
-		// Pairing is deferred (see package doc) — per plan §4, no
-		// argument or an invalid token is silently ignored.
-		return
 	case strings.HasPrefix(text, "/"):
 		return
 	default:

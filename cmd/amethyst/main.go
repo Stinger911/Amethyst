@@ -22,19 +22,23 @@ import (
 	"github.com/Stinger911/Amethyst/internal/auth"
 	"github.com/Stinger911/Amethyst/internal/bot"
 	"github.com/Stinger911/Amethyst/internal/index"
+	"github.com/Stinger911/Amethyst/internal/notify"
 	"github.com/Stinger911/Amethyst/internal/watch"
 	"github.com/Stinger911/Amethyst/internal/webui"
 )
 
 type config struct {
-	VaultPath          string
-	IndexPath          string
-	ListenAddr         string
-	AdminPassword      string
-	AdminPasswordReset bool
-	TelegramBotToken   string
-	TelegramOwnerID    string
-	TelegramBotName    string
+	VaultPath             string
+	IndexPath             string
+	ListenAddr            string
+	AdminPassword         string
+	AdminPasswordReset    bool
+	TelegramBotToken      string
+	TelegramOwnerID       string
+	TelegramBotName       string
+	TelegramMode          string
+	TelegramWebhookURL    string
+	TelegramWebhookSecret string
 }
 
 func loadConfig() config {
@@ -43,14 +47,17 @@ func loadConfig() config {
 		log.Fatal("VAULT_PATH is required (path to the Obsidian vault to open)")
 	}
 	return config{
-		VaultPath:          vaultPath,
-		IndexPath:          getenvDefault("INDEX_PATH", "data/index.db"),
-		ListenAddr:         getenvDefault("LISTEN_ADDR", ":8080"),
-		AdminPassword:      os.Getenv("ADMIN_PASSWORD"),
-		AdminPasswordReset: os.Getenv("ADMIN_PASSWORD_RESET") == "true",
-		TelegramBotToken:   os.Getenv("TELEGRAM_BOT_TOKEN"),
-		TelegramOwnerID:    os.Getenv("TELEGRAM_OWNER_CHAT_ID"),
-		TelegramBotName:    os.Getenv("TELEGRAM_BOT_USERNAME"),
+		VaultPath:             vaultPath,
+		IndexPath:             getenvDefault("INDEX_PATH", "data/index.db"),
+		ListenAddr:            getenvDefault("LISTEN_ADDR", ":8080"),
+		AdminPassword:         os.Getenv("ADMIN_PASSWORD"),
+		AdminPasswordReset:    os.Getenv("ADMIN_PASSWORD_RESET") == "true",
+		TelegramBotToken:      os.Getenv("TELEGRAM_BOT_TOKEN"),
+		TelegramOwnerID:       os.Getenv("TELEGRAM_OWNER_CHAT_ID"),
+		TelegramBotName:       os.Getenv("TELEGRAM_BOT_USERNAME"),
+		TelegramMode:          getenvDefault("TELEGRAM_MODE", "polling"),
+		TelegramWebhookURL:    os.Getenv("TELEGRAM_WEBHOOK_URL"),
+		TelegramWebhookSecret: os.Getenv("TELEGRAM_WEBHOOK_SECRET"),
 	}
 }
 
@@ -61,14 +68,22 @@ func getenvDefault(key, def string) string {
 	return def
 }
 
-// startTelegramBot wires up internal/bot if TELEGRAM_BOT_TOKEN is set,
-// running its polling loop in its own goroutine tracked by wg. Owner
-// identity is the same env var the Login Widget callback uses
-// (TELEGRAM_OWNER_CHAT_ID) — see internal/bot's package doc for why the
-// dynamic pairing flow isn't wired up yet.
-func startTelegramBot(ctx context.Context, wg *sync.WaitGroup, cfg config, db *index.DB, w *watch.Watcher) {
+// startTelegramBot wires up internal/bot if TELEGRAM_BOT_TOKEN is set.
+// Owner identity is env-configured (TELEGRAM_OWNER_CHAT_ID) if set,
+// otherwise the bot resolves it dynamically via /start <token> pairing
+// (see internal/bot's currentOwnerChatID and internal/auth's
+// telegram_pairing.go) — no extra wiring needed here for that fallback,
+// since both read straight from db.
+//
+// TELEGRAM_MODE (default "polling") picks the transport: "polling" runs
+// Bot.Run in its own goroutine tracked by wg; "webhook" instead registers
+// the webhook URL with Telegram and returns an http.HandlerFunc the
+// caller must wire up as POST /api/telegram/webhook (see
+// plan_amethyst-telegram-bot §1/§5 step 6) — additive and lowest priority,
+// most self-hosted deploys have no public HTTPS endpoint to use it on.
+func startTelegramBot(ctx context.Context, wg *sync.WaitGroup, cfg config, db *index.DB, w *watch.Watcher) http.HandlerFunc {
 	if cfg.TelegramBotToken == "" {
-		return
+		return nil
 	}
 
 	botAPI, err := tgbotapi.NewBotAPI(cfg.TelegramBotToken)
@@ -84,7 +99,7 @@ func startTelegramBot(ctx context.Context, wg *sync.WaitGroup, cfg config, db *i
 		}
 	}
 	if ownerChatID == 0 {
-		log.Printf("telegram bot: TELEGRAM_OWNER_CHAT_ID not set, bot will ignore all messages until it is")
+		log.Printf("telegram bot: TELEGRAM_OWNER_CHAT_ID not set, bot will ignore all messages until paired (see /settings)")
 	}
 
 	tgBot := &bot.Bot{
@@ -95,6 +110,23 @@ func startTelegramBot(ctx context.Context, wg *sync.WaitGroup, cfg config, db *i
 		Sender:      bot.NewTelegramSender(botAPI),
 	}
 
+	if cfg.TelegramMode == "webhook" {
+		if cfg.TelegramWebhookURL == "" {
+			log.Fatal("TELEGRAM_MODE=webhook requires TELEGRAM_WEBHOOK_URL")
+		}
+		if err := bot.SetWebhook(botAPI, cfg.TelegramWebhookURL, cfg.TelegramWebhookSecret); err != nil {
+			log.Fatalf("telegram set webhook: %v", err)
+		}
+		log.Printf("telegram bot: webhook mode, registered %s", cfg.TelegramWebhookURL)
+		return tgBot.WebhookHandler(cfg.TelegramWebhookSecret)
+	}
+
+	// Telegram refuses GetUpdates while a webhook is still registered, so
+	// clear one left over from a previous run in webhook mode.
+	if err := bot.RemoveWebhook(botAPI); err != nil {
+		log.Printf("telegram bot: remove webhook: %v", err)
+	}
+
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -102,6 +134,7 @@ func startTelegramBot(ctx context.Context, wg *sync.WaitGroup, cfg config, db *i
 			log.Printf("telegram bot stopped: %v", err)
 		}
 	}()
+	return nil
 }
 
 func main() {
@@ -136,6 +169,8 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	hub := notify.NewHub()
+
 	w, err := watch.New(cfg.VaultPath, db)
 	if err != nil {
 		log.Fatalf("start watcher: %v", err)
@@ -144,6 +179,14 @@ func main() {
 	w.OnEvent = func(ev watch.Event) {
 		if ev.Err != nil {
 			log.Printf("watch %s: %v", ev.Path, ev.Err)
+			return
+		}
+		// Suppressed (self-write) events never reach OnEvent at all (see
+		// Watcher.consumeSuppressed) — anything that does is a genuinely
+		// external change, exactly what plan_amethyst-web-ui §5 wants to
+		// push to connected browser tabs.
+		if ev.Path != "" {
+			hub.Broadcast(ev.Path)
 		}
 	}
 
@@ -156,7 +199,7 @@ func main() {
 		}
 	}()
 
-	startTelegramBot(ctx, &wg, cfg, db, w)
+	webhookHandler := startTelegramBot(ctx, &wg, cfg, db, w)
 
 	staticHandler, err := webui.Handler()
 	if err != nil {
@@ -175,7 +218,7 @@ func main() {
 		}, api.WriteConfig{
 			VaultRoot: cfg.VaultPath,
 			Watcher:   w,
-		}, staticHandler),
+		}, hub, webhookHandler, staticHandler),
 	}
 
 	go func() {

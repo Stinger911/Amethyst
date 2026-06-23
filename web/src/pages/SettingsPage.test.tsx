@@ -1,21 +1,24 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { getSettings, saveSettings } from '../api'
+import { getSettings, pairTelegram, saveSettings } from '../api'
 import SettingsPage from './SettingsPage'
 
 vi.mock('../api', () => ({
   getSettings: vi.fn(),
   saveSettings: vi.fn(),
+  pairTelegram: vi.fn(),
 }))
 
 const mockGetSettings = vi.mocked(getSettings)
 const mockSaveSettings = vi.mocked(saveSettings)
+const mockPairTelegram = vi.mocked(pairTelegram)
 
 describe('SettingsPage', () => {
   afterEach(() => {
     mockGetSettings.mockReset()
     mockSaveSettings.mockReset()
+    mockPairTelegram.mockReset()
   })
 
   it('loads the current capture mode and checks the matching radio', async () => {
@@ -59,5 +62,37 @@ describe('SettingsPage', () => {
     await userEvent.click(screen.getByLabelText(/today's daily note/i))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('save boom')
+  })
+
+  it('generates a pairing code and shows the /start command', async () => {
+    mockGetSettings.mockResolvedValue({ captureMode: 'inbox' })
+    mockPairTelegram.mockResolvedValue({
+      token: 'abc123',
+      botUsername: 'AmethystBot',
+      expiresAt: new Date().toISOString(),
+    })
+
+    render(<SettingsPage />)
+    await screen.findByLabelText(/inbox folder/i)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Generate pairing code' }))
+
+    expect(await screen.findByText(/\/start abc123/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /t\.me\/AmethystBot/ })).toHaveAttribute(
+      'href',
+      'https://t.me/AmethystBot?start=abc123',
+    )
+  })
+
+  it('shows an error when generating a pairing code fails', async () => {
+    mockGetSettings.mockResolvedValue({ captureMode: 'inbox' })
+    mockPairTelegram.mockRejectedValue(new Error('pair boom'))
+
+    render(<SettingsPage />)
+    await screen.findByLabelText(/inbox folder/i)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Generate pairing code' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('pair boom')
   })
 })

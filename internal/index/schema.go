@@ -75,6 +75,16 @@ CREATE TABLE IF NOT EXISTS sessions (
 	token_hash TEXT PRIMARY KEY,
 	expires_at INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS telegram_owner (
+	id      INTEGER PRIMARY KEY CHECK (id = 1),
+	chat_id TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS telegram_pairing_tokens (
+	token_hash TEXT PRIMARY KEY,
+	expires_at INTEGER NOT NULL
+);
 `
 
 // settingsSchemaDDL holds user-configurable settings (e.g. the Telegram

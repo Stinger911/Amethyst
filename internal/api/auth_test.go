@@ -35,7 +35,7 @@ func postJSON(t *testing.T, db *index.DB, path string, body any, cookies ...*htt
 		req.AddCookie(c)
 	}
 	rec := httptest.NewRecorder()
-	NewServer(db, TelegramConfig{}, WriteConfig{}, nil).ServeHTTP(rec, req)
+	NewServer(db, TelegramConfig{}, WriteConfig{}, nil, nil, nil).ServeHTTP(rec, req)
 	return rec
 }
 
@@ -111,7 +111,7 @@ func TestAuthConfig_TelegramNotConfigured(t *testing.T) {
 	db := openAuthTestDB(t)
 	req := httptest.NewRequest(http.MethodGet, "/api/auth/config", nil)
 	rec := httptest.NewRecorder()
-	NewServer(db, TelegramConfig{}, WriteConfig{}, nil).ServeHTTP(rec, req)
+	NewServer(db, TelegramConfig{}, WriteConfig{}, nil, nil, nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
@@ -133,11 +133,34 @@ func TestAuthConfig_TelegramConfigured(t *testing.T) {
 		BotToken:    "bot-token",
 		OwnerChatID: "12345",
 		BotUsername: "AmethystBot",
-	}, WriteConfig{}, nil).ServeHTTP(rec, req)
+	}, WriteConfig{}, nil, nil, nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
+	var resp authConfigResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.TelegramBotUsername != "AmethystBot" {
+		t.Errorf("telegramBotUsername = %q, want %q", resp.TelegramBotUsername, "AmethystBot")
+	}
+}
+
+func TestAuthConfig_TelegramConfiguredViaDynamicPairing(t *testing.T) {
+	db := openAuthTestDB(t)
+	if err := auth.SetTelegramOwnerChatID(db, "12345"); err != nil {
+		t.Fatalf("SetTelegramOwnerChatID: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/config", nil)
+	rec := httptest.NewRecorder()
+	NewServer(db, TelegramConfig{
+		BotToken:    "bot-token",
+		BotUsername: "AmethystBot",
+		// OwnerChatID intentionally empty: this is the dynamic-pairing path.
+	}, WriteConfig{}, nil, nil, nil).ServeHTTP(rec, req)
+
 	var resp authConfigResponse
 	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode response: %v", err)

@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { getNote, type NoteDetail } from '../api'
 import NotePage from './NotePage'
 
@@ -10,6 +10,23 @@ vi.mock('../api', () => ({
 }))
 
 const mockGetNote = vi.mocked(getNote)
+
+class FakeWebSocket {
+  static instances: FakeWebSocket[] = []
+  onmessage: ((event: { data: string }) => void) | null = null
+  url: string
+
+  constructor(url: string) {
+    this.url = url
+    FakeWebSocket.instances.push(this)
+  }
+
+  close() {}
+
+  emit(data: unknown) {
+    this.onmessage?.({ data: JSON.stringify(data) })
+  }
+}
 
 const hub: NoteDetail = {
   path: 'Hub.md',
@@ -44,8 +61,14 @@ function renderNotePage(initialPath: string) {
 }
 
 describe('NotePage', () => {
+  beforeEach(() => {
+    FakeWebSocket.instances = []
+    vi.stubGlobal('WebSocket', FakeWebSocket)
+  })
+
   afterEach(() => {
     mockGetNote.mockReset()
+    vi.unstubAllGlobals()
   })
 
   it('renders the note title, rendered HTML and backlinks', async () => {
@@ -82,5 +105,46 @@ describe('NotePage', () => {
 
     expect(await screen.findByRole('heading', { name: 'Leaf' })).toBeInTheDocument()
     expect(mockGetNote).toHaveBeenCalledWith('Leaf.md')
+  })
+
+  it('shows a banner when the viewed note changes externally', async () => {
+    mockGetNote.mockResolvedValue(hub)
+
+    renderNotePage('/note/Hub.md')
+    await screen.findByRole('heading', { name: 'Hub' })
+
+    FakeWebSocket.instances[0].emit({ path: 'Hub.md' })
+
+    expect(await screen.findByText('This note changed outside the app.')).toBeInTheDocument()
+  })
+
+  it('ignores a change notice for a different note', async () => {
+    mockGetNote.mockResolvedValue(hub)
+
+    renderNotePage('/note/Hub.md')
+    await screen.findByRole('heading', { name: 'Hub' })
+
+    FakeWebSocket.instances[0].emit({ path: 'SomeOtherNote.md' })
+
+    expect(screen.queryByText('This note changed outside the app.')).not.toBeInTheDocument()
+  })
+
+  it('reload clears the banner and refetches the note', async () => {
+    mockGetNote.mockResolvedValue(hub)
+
+    renderNotePage('/note/Hub.md')
+    await screen.findByRole('heading', { name: 'Hub' })
+    FakeWebSocket.instances[0].emit({ path: 'Hub.md' })
+    await screen.findByText('This note changed outside the app.')
+
+    mockGetNote.mockClear()
+    const updatedHub: NoteDetail = { ...hub, title: 'Hub (edited)' }
+    mockGetNote.mockResolvedValue(updatedHub)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Reload' }))
+
+    expect(mockGetNote).toHaveBeenCalledWith('Hub.md')
+    expect(await screen.findByRole('heading', { name: 'Hub (edited)' })).toBeInTheDocument()
+    expect(screen.queryByText('This note changed outside the app.')).not.toBeInTheDocument()
   })
 })
